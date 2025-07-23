@@ -10,6 +10,10 @@ import random
 import copy
 import os # For checking file existence
 
+# --- Call st.set_page_config() FIRST in the main script ---
+st.set_page_config(layout="wide", page_title="Smart Reservoir System")
+
+
 # --- Configuration Constants (matching your notebook) ---
 RESERVOIR_MAX_CAPACITY_ML = 10000
 MIN_RESERVOIR_LEVEL_ML = 1000
@@ -26,22 +30,29 @@ GA_MAX_RELEASE = 500 # Adjust based on your dam's typical max release capacity
 @st.cache_resource # Caches the resource (model, scaler) so it's loaded only once
 def load_resources():
     model_path = 'best_reservoir_lstm_model.keras'
-    if not os.path.exists(model_path):
-        st.error(f"Error: LSTM model file '{model_path}' not found. Please ensure it's in the same directory as app.py.")
-        st.stop() # Stop the app if model can't be loaded
+    # NOTE: Temporarily commenting out st.error/st.stop calls for set_page_config compatibility
+    # if not os.path.exists(model_path):
+    #     st.error(f"Error: LSTM model file '{model_path}' not found. Please ensure it's in the same directory as app.py.")
+    #     st.stop() # Stop the app if model can't be loaded
 
     try:
         best_model = tf.keras.models.load_model(model_path)
     except Exception as e:
-        st.error(f"Error loading LSTM model: {e}. Check if TensorFlow/Keras are correctly installed and model file is valid.")
-        st.stop()
+        # st.error(f"Error loading LSTM model: {e}. Check if TensorFlow/Keras are correctly installed and model file is valid.")
+        # st.stop()
+        raise e # Re-raise error so Streamlit can catch it later in the main script
 
     df_original_path = 'preprocessed_reservoir_data.csv'
-    if not os.path.exists(df_original_path):
-        st.error(f"Error: Preprocessed data file '{df_original_path}' not found. Please ensure it's in the same directory as app.py.")
-        st.stop()
+    # if not os.path.exists(df_original_path):
+    #     st.error(f"Error: Preprocessed data file '{df_original_path}' not found. Please ensure it's in the same directory as app.py.")
+    #     st.stop()
 
-    df_original = pd.read_csv(df_original_path, index_col='Date', parse_dates=True)
+    try:
+        df_original = pd.read_csv(df_original_path, index_col='Date', parse_dates=True)
+    except Exception as e:
+        # st.error(f"Error loading preprocessed data: {e}. Check CSV format.")
+        # st.stop()
+        raise e # Re-raise error
 
     target_column = 'Reservoir_Level_ML'
     features = [col for col in df_original.columns if col != target_column and col != 'Year']
@@ -62,7 +73,9 @@ def load_resources():
     return best_model, scaler, data_for_model, df_original, target_column, features, target_col_idx_in_raw_data
 
 # Load resources globally to avoid re-loading on every rerun
+# This call now happens AFTER st.set_page_config
 best_model, scaler, data_for_model, df_original, target_column, features, target_col_idx_in_raw_data = load_resources()
+
 
 # --- Re-use your `create_sequences` function (from Step 2, Cell 4) ---
 # This function is used to prepare input for the LSTM model
@@ -205,8 +218,6 @@ def run_genetic_algorithm_st(current_level, forecasted_inflow_ga, forecasted_dem
 
 
 # --- Streamlit App Layout ---
-st.set_page_config(layout="wide", page_title="Smart Reservoir System")
-
 st.title("💧 Smart Reservoir Management System")
 st.markdown("""
     This application leverages **Machine Learning (LSTM)** for forecasting and a **Genetic Algorithm** for optimizing water release schedules.
@@ -230,22 +241,15 @@ simulation_start_date_input = st.sidebar.date_input(
 # Convert to datetime object and check for data availability
 simulation_start_datetime = pd.to_datetime(simulation_start_date_input)
 
-try:
-    current_reservoir_level = df_original.loc[simulation_start_datetime, target_column]
-    # Extract the required historical data segment for the LSTM input
-    idx_for_sim_start = df_original.index.get_loc(simulation_start_datetime)
-    past_data_segment_raw = df_original.iloc[idx_for_sim_start - LOOK_BACK : idx_for_sim_start][features + [target_column]]
-    
-    # Check if past_data_segment_raw has enough rows
-    if len(past_data_segment_raw) != LOOK_BACK:
-        st.error(f"Error: Not enough historical data for a {LOOK_BACK}-day look-back before {simulation_start_date_input}. Please select an earlier date in the historical data.")
-        st.stop()
+# --- Removed try-except blocks for simplicity, errors will now halt app directly ---
+current_reservoir_level = df_original.loc[simulation_start_datetime, target_column]
+idx_for_sim_start = df_original.index.get_loc(simulation_start_datetime)
+past_data_segment_raw = df_original.iloc[idx_for_sim_start - LOOK_BACK : idx_for_sim_start][features + [target_column]]
+past_data_segment_scaled = scaler.transform(past_data_segment_raw)
 
-    past_data_segment_scaled = scaler.transform(past_data_segment_raw)
-    
-except KeyError:
-    st.error(f"Error: Data for {simulation_start_date_input} not found. Please choose a date within the dataset's range.")
-    st.stop()
+# Check if past_data_segment_raw has enough rows (simple check, no st.error/st.stop)
+if len(past_data_segment_raw) != LOOK_BACK:
+    st.warning(f"Warning: Not enough historical data for a {LOOK_BACK}-day look-back before {simulation_start_date_input}. Results may be inaccurate.")
 
 
 st.sidebar.markdown("---")
@@ -255,34 +259,13 @@ st.sidebar.info("Adjust the predicted Inflow and Demand for the next 7 days to s
 inflow_adjust = st.sidebar.slider("Adjust Forecasted Inflow (%)", -50, 50, 0, help="Adjust the historical average inflow for the forecast horizon by this percentage.")
 demand_adjust = st.sidebar.slider("Adjust Forecasted Demand (%)", -30, 30, 0, help="Adjust the historical average demand for the forecast horizon by this percentage.")
 
+# --- Removed try-except blocks for simplicity, errors will now halt app directly ---
+base_forecasted_inflow = df_original['Inflow_ML'].loc[simulation_start_datetime + pd.Timedelta(days=1) : simulation_start_datetime + pd.Timedelta(days=FORECAST_HORIZON)].values
+base_forecasted_demand = df_original['Demand_ML'].loc[simulation_start_datetime + pd.Timedelta(days=1) : simulation_start_datetime + pd.Timedelta(days=FORECAST_HORIZON)].values
 
-# --- LSTM Base Forecast (This section generates the base future Inflow/Demand) ---
-# In a real system, you'd have LSTMs trained for Inflow and Demand too.
-# For this synthetic data demo, we use historical averages for the forecast horizon.
-# For simplicity, we get the next 7 days' actual historical Inflow/Demand as our "base forecast"
-# starting *from* `simulation_start_datetime` for LSTM's prediction horizon.
-# However, the GA needs future forecasts *starting from tomorrow*.
-
-# Let's use the LSTM model to predict the *next* `FORECAST_HORIZON` days of reservoir levels.
-# This serves as a "base" forecast if no optimization strategy is applied.
-# This assumes the LSTM can predict levels given past data.
-# Then, for GA, we'll need independent Inflow/Demand forecasts.
-
-# For demo purposes, we will take the actual future inflow and demand from `df_original`
-# starting from the day *after* `simulation_start_datetime` as our baseline "forecasts"
-# for the GA and scenario analysis. In a real system, LSTMs would predict these.
-try:
-    base_forecasted_inflow = df_original['Inflow_ML'].loc[simulation_start_datetime + pd.Timedelta(days=1) : simulation_start_datetime + pd.Timedelta(days=FORECAST_HORIZON)].values
-    base_forecasted_demand = df_original['Demand_ML'].loc[simulation_start_datetime + pd.Timedelta(days=1) : simulation_start_datetime + pd.Timedelta(days=FORECAST_HORIZON)].values
-    
-    if len(base_forecasted_inflow) < FORECAST_HORIZON or len(base_forecasted_demand) < FORECAST_HORIZON:
-         st.error(f"Error: Not enough future data for a {FORECAST_HORIZON}-day forecast from {simulation_start_date_input}. Please select an earlier simulation start date.")
-         st.stop()
-
-except KeyError:
-    st.error(f"Error: Not enough future data for a {FORECAST_HORIZON}-day forecast from {simulation_start_date_input}. Please choose an earlier simulation start date within the dataset.")
-    st.stop()
-
+# Simple check for enough future data (no st.error/st.stop)
+if len(base_forecasted_inflow) < FORECAST_HORIZON or len(base_forecasted_demand) < FORECAST_HORIZON:
+    st.warning(f"Warning: Not enough future data for a {FORECAST_HORIZON}-day forecast from {simulation_start_date_input}. Results may be inaccurate.")
 
 # Apply adjustments for scenario analysis
 adjusted_forecasted_inflow = base_forecasted_inflow * (1 + inflow_adjust / 100)
@@ -296,7 +279,6 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.metric(label="Current Reservoir Level", value=f"{current_reservoir_level:.2f} ML", delta=None)
-    # Add other current metrics if desired from df_original.loc[simulation_start_datetime]
 
 with col2:
     st.metric(label="Max Reservoir Capacity", value=f"{RESERVOIR_MAX_CAPACITY_ML} ML", delta=None)
@@ -346,14 +328,12 @@ if st.sidebar.button("Run Optimization for Scenario"):
     ax.plot(forecast_dates_for_plot, ga_simulated_levels, marker='o', linestyle='-', color='green', label='Simulated Reservoir Level (Optimal)')
 
     # --- LSTM Base Forecast Plot ---
-    # This is line 358 in my code, ensure its indentation matches the above 'ax.plot' etc.
     lstm_predicted_levels_scaled = best_model.predict(past_data_segment_scaled.reshape(1, LOOK_BACK, len(features) + 1))[0] # Get the 1D array of predictions
 
     dummy_pred_array_single = np.zeros((FORECAST_HORIZON, data_for_model.shape[1]))
     dummy_pred_array_single[:, target_col_idx_in_raw_data] = lstm_predicted_levels_scaled
     lstm_predicted_levels_unscaled = scaler.inverse_transform(dummy_pred_array_single)[:, target_col_idx_in_raw_data]
 
-    # This is the line that caused the error for you. Make sure its indentation matches the lines above and below it.
     lstm_forecast_dates = pd.date_range(start=simulation_start_datetime + pd.Timedelta(days=1), periods=FORECAST_HORIZON, freq='D')
     ax.plot(lstm_forecast_dates, lstm_predicted_levels_unscaled, marker='x', linestyle='--', color='blue', label='LSTM Base Forecast (No Optimization)')
 
@@ -367,6 +347,7 @@ if st.sidebar.button("Run Optimization for Scenario"):
     ax.grid(True)
     plt.xticks(rotation=45)
     st.pyplot(fig) # Display plot in Streamlit
+    plt.close(fig) # Close the figure to free up memory
 
     st.markdown("---")
 
@@ -403,11 +384,8 @@ st.subheader("Historical Reservoir Level & LSTM Forecast Comparison")
 st.write("This plot shows how well the LSTM model predicted historical reservoir levels during the test period.")
 
 # Load the historical test forecasts you saved
-try:
-    lstm_test_forecasts = pd.read_csv('./dashboard_data/lstm_test_forecasts.csv', index_col='Date', parse_dates=True)
-except FileNotFoundError:
-    st.error("LSTM test forecasts CSV not found. Please ensure 'lstm_test_forecasts.csv' is in the 'dashboard_data' folder.")
-    st.stop()
+# Removed try-except for simplicity
+lstm_test_forecasts = pd.read_csv('./dashboard_data/lstm_test_forecasts.csv', index_col='Date', parse_dates=True)
 
 
 fig_hist, ax_hist = plt.subplots(figsize=(15, 7))
@@ -420,16 +398,14 @@ ax_hist.legend()
 ax_hist.grid(True)
 plt.xticks(rotation=45)
 st.pyplot(fig_hist)
+plt.close(fig_hist) # Close the figure
 
 st.subheader("Full Historical Data Overview")
 st.write("Long-term trends of reservoir level, inflow, and outflow.")
 
 # Load the full historical data you saved
-try:
-    historical_data_full_df = pd.read_csv('./dashboard_data/historical_reservoir_data.csv', index_col='Date', parse_dates=True)
-except FileNotFoundError:
-    st.error("Full historical data CSV not found. Please ensure 'historical_reservoir_data.csv' is in the 'dashboard_data' folder.")
-    st.stop()
+# Removed try-except for simplicity
+historical_data_full_df = pd.read_csv('./dashboard_data/historical_reservoir_data.csv', index_col='Date', parse_dates=True)
 
 fig_full_hist_detail, ax_full_hist_detail = plt.subplots(figsize=(15, 7))
 ax_full_hist_detail.plot(historical_data_full_df.index, historical_data_full_df['Reservoir_Level_ML'], label='Reservoir Level', color='purple')
@@ -444,9 +420,8 @@ ax_full_hist_detail.legend()
 ax_full_hist_detail.grid(True)
 plt.xticks(rotation=45)
 st.pyplot(fig_full_hist_detail)
+plt.close(fig_full_hist_detail) # Close the figure
 
-
-# --- Innovative Feature: Explainable AI (Conceptual Section) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("Explainability (XAI) Insights")
 st.sidebar.info("This section would provide insights into why the LSTM makes certain predictions (e.g., highlighting key influencing factors like rainfall or demand).")
