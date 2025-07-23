@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+.env
+venv/
+.conda/
+
+# Anaconda Environment (VERY IMPORTANT to ignore your env folder)
+envs/
+
+# Streamlit
+.streamlit/
+*.png # Ignore Streamlit's cached plot images if any
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.avi
+*.mov
+
+# Specific to your project if you don't want to upload large files
+# (Our .keras model and CSVs are needed, so DON'T ignore them unless they are huge)
+# However, if your model ever becomes too large for free tier (e.g. > 500MB), you'd need to consider storing it on cloud storage
