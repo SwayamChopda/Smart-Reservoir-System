@@ -3,7 +3,5 @@ pandas==2.2.2
 numpy==1.26.4
 matplotlib==3.8.4
 scikit-learn==1.5.0
-tensorflow==2.15.0 # IMPORTANT CHANGE: Use 2.15.0 - this is known to have wheels for broader Python ranges
-keras==2.15.0      # IMPORTANT CHANGE: Keras should match TensorFlow for older versions
-# For newer TensorFlow (>=2.16), Keras is bundled, but specifying helps sometimes.
-# For 2.15, Keras needs to be 2.15.
+tensorflow==2.19.0
+keras==3.3.3  # Keras 3.x is typically bundled with TF 2.16+, but explicit ensures compatibility if needed
