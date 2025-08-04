@@ -1,6 +1,6 @@
 # 💧 Smart Reservoir Management System: AI-Powered Water Resource Optimization
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](YOUR_STREAMLIT_APP_URL_HERE)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)]((https://smart-reservoir-system-nkhhsfzptkf2x6icphpf9p.streamlit.app/))
 [![Python](https://img.shields.io/badge/Python-3.9+-blue?style=flat&logo=python)](https://www.python.org/)
 [![TensorFlow](https://img.shields.io/badge/TensorFlow-2.19.0-FF6F00?style=flat&logo=tensorflow)](https://www.tensorflow.org/)
 [![Keras](https://img.shields.io/badge/Keras-3.5.0-D00000?style=flat&logo=keras)](https://keras.io/)
